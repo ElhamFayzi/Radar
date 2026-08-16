@@ -1,19 +1,17 @@
-/* Radar — coursework & deadline tracker (baseline front-end)
- * Vanilla JS, no build step. Rendering is full-redraw into #view-root:
- * change state, call render(). Swap in a framework later; the data model,
- * urgency computation and view markup below are the parts worth keeping.
+/* Radar — coursework & deadline tracker
+ * Vanilla JS, no build step. Data lives in the Flask/SQLite backend under
+ * /api/courses and /api/tasks; state.tasks is a local cache refreshed after
+ * every mutation. Rendering is still full-redraw into #view-root: refresh
+ * state, call render(). The urgency computation and view markup below are
+ * unchanged from the original client-only mock — only the data layer at
+ * the top and the mutation handlers near the bottom talk to the backend.
  * ---------------------------------------------------------------- */
 
 /* ── model ───────────────────────────────────────────────── */
 
-const COURSES = {
-  'CS 251':   '#7aa2f7',
-  'MATH 340': '#6fcfb0',
-  'PHIL 210': '#e0b060',
-  'HIST 118': '#e0707c',
-  'BIO 221':  '#9ac96a',
-  'Personal': '#9b9fb5'
-};
+/* Populated from GET /api/courses at startup (see init() below). */
+let COURSES = {};      // name -> color, for rendering
+let COURSE_IDS = {};   // name -> id, for API calls
 
 const TYPES     = ['Homework', 'Exam', 'Project', 'Reading', 'Paper', 'Other'];
 const STATUSES  = ['Not Started', 'In Progress', 'Done'];
@@ -27,49 +25,81 @@ const OVERDUE    = '#e05f6f';
 const WORKLOAD_HOURS = { Light: 1.5, Moderate: 3.5, Heavy: 7 };
 const WORKLOAD_DAYS  = { Light: 1,   Moderate: 2,   Heavy: 3 };
 
-/* `off` is a day offset from today, so the seed data never goes stale.
- * A real backend would send an ISO due date; see toOffset()/toISO(). */
-const SEED = [
-  task(1,  'CS 251',   'Problem Set 6 — heaps & tries',    'Homework', -1, '23:59', 'High',   'Moderate', 8,    'In Progress', { subtasks: [s('Part A: heapify proof', true), s('Part B: trie insert')], notes: 'Submit on Gradescope' }),
-  task(2,  'HIST 118', 'Response paper: Reconstruction',   'Paper',     0, '17:00', 'Medium', 'Moderate', 10,   'In Progress'),
-  task(3,  'BIO 221',  'Chapter 9 reading + quiz',         'Reading',   1, '09:00', 'Low',    'Light',    2,    'Not Started', { recurring: true }),
-  task(4,  'MATH 340', 'Midterm 1 (Ch. 1–4)',              'Exam',      3, '10:30', 'High',   'Heavy',    25,   'In Progress', { subtasks: [s('Redo PS 1–3', true), s('Practice exam'), s('Office hours Weds')], spent: 4.5 }),
-  task(5,  'CS 251',   'Project 2 — B-tree index',         'Project',   5, '23:59', 'High',   'Heavy',    20,   'Not Started', { subtasks: [s('Design doc'), s('Split/merge')], notes: 'Pairs allowed' }),
-  task(6,  'PHIL 210', 'Weekly discussion post',           'Homework',  2, '22:00', 'Low',    'Light',    3,    'Not Started', { recurring: true }),
-  task(7,  'Personal', 'Renew passport — photo + form',    'Other',     6, '12:00', 'Medium', 'Light',    null, 'Not Started'),
-  task(8,  'MATH 340', 'PS 5 — eigenvectors',              'Homework',  4, '23:59', 'Medium', 'Moderate', 6,    'Not Started', { recurring: true }),
-  task(9,  'PHIL 210', 'Essay 2 draft: Rawls',             'Paper',     9, '23:59', 'Medium', 'Heavy',    15,   'Not Started'),
-  task(10, 'BIO 221',  'Lab report — gel electrophoresis', 'Homework',  7, '20:00', 'Medium', 'Moderate', 7,    'Not Started'),
-  task(11, 'HIST 118', 'Primary source annotations',       'Reading',   8, '23:59', 'Low',    'Light',    4,    'Not Started', { recurring: true }),
-  task(12, 'CS 251',   'Quiz 4 — hashing',                 'Exam',     11, '09:30', 'Medium', 'Light',    5,    'Not Started'),
-  task(13, 'Personal', 'TA shift swap request',            'Other',     2, '18:00', 'Low',    'Light',    null, 'Not Started'),
-  task(14, 'BIO 221',  'Exam 2',                           'Exam',     15, '08:00', 'High',   'Heavy',    22,   'Not Started'),
-  task(15, 'MATH 340', 'PS 6 — diagonalization',           'Homework', 11, '23:59', 'Medium', 'Moderate', 6,    'Not Started', { recurring: true }),
-  task(16, 'HIST 118', 'Term paper proposal',              'Paper',    13, '23:59', 'High',   'Moderate', 10,   'Not Started'),
-  task(17, 'CS 251',   'Problem Set 5 — graphs',           'Homework', -6, '23:59', 'High',   'Moderate', 8,    'Done', { spent: 6 }),
-  task(18, 'PHIL 210', 'Essay 1: utilitarian calculus',    'Paper',    -9, '23:59', 'High',   'Heavy',    15,   'Done', { spent: 9.5 }),
-  task(19, 'BIO 221',  'Chapter 8 reading',                'Reading',  -3, '09:00', 'Low',    'Light',    2,    'Done', { recurring: true, spent: 1 }),
-  task(20, 'MATH 340', 'PS 4 — determinants',              'Homework', -4, '23:59', 'Medium', 'Moderate', 6,    'Done', { spent: 3 })
-];
-
-function task(id, course, name, type, off, time, priority, workload, weight, status, extra) {
-  return Object.assign({
-    id, course, name, type, off, time, priority, workload, weight, status,
-    notes: '', subtasks: [], recurring: false, reminder: '2 days before', spent: 0
-  }, extra || {});
-}
-function s(text, done) { return { text, done: !!done }; }
-
 const state = {
   view: 'dashboard',
   tlMode: 'week',
-  tasks: SEED,
+  tasks: [],
   filters: { Course: 'All', Type: 'All', Priority: 'All', Status: 'All', Urgency: 'All' },
   sortKey: 'due', sortDir: 1,
   quick: '',
   modal: false, editingId: null, form: null, subtaskDraft: '',
+  courseModal: false, courseForm: null,
   dragId: null, dragOver: null
 };
+
+const COURSE_SWATCHES = [
+  '#7aa2f7', '#6fcfb0', '#e0b060', '#e0707c', '#9ac96a',
+  '#9b9fb5', '#c792ea', '#f78c6c', '#89ddff', '#f07178'
+];
+
+/* ── backend API ─────────────────────────────────────────── */
+
+async function api(method, path, body) {
+  const res = await fetch(`/api${path}`, {
+    method,
+    headers: body !== undefined ? { 'Content-Type': 'application/json' } : undefined,
+    body: body !== undefined ? JSON.stringify(body) : undefined
+  });
+  if (!res.ok) {
+    const payload = await res.json().catch(() => ({}));
+    throw new Error(payload.error || `${method} ${path} failed (${res.status})`);
+  }
+  return res.status === 204 ? null : res.json();
+}
+
+/* Backend tasks store a real due_date/due_time; the view layer below works
+ * in day-offsets from today (`off`), so this adapter derives `off` via
+ * toOffset() and otherwise renames fields 1:1 onto the shape the original
+ * client-only mock used internally. */
+function fromApi(t) {
+  return {
+    id: t.id,
+    course: t.course.name,
+    name: t.name,
+    type: t.type,
+    off: toOffset(t.due_date),
+    time: t.due_time,
+    priority: t.priority,
+    workload: t.workload,
+    weight: t.weight,
+    status: t.status,
+    notes: t.notes || '',
+    subtasks: (t.subtasks || []).map(st => ({ id: st.id, text: st.text, done: st.done })),
+    recurring: t.recurring,
+    reminder: t.reminder,
+    spent: t.spent_hours
+  };
+}
+
+async function refreshCourses() {
+  const courses = await api('GET', '/courses');
+  COURSES = {}; COURSE_IDS = {};
+  courses.forEach(c => { COURSES[c.name] = c.color; COURSE_IDS[c.name] = c.id; });
+}
+
+async function refreshTasks() {
+  const tasks = await api('GET', '/tasks');
+  state.tasks = tasks.map(fromApi);
+}
+
+async function withErrorAlert(fn) {
+  try {
+    await fn();
+  } catch (err) {
+    console.error(err);
+    alert(err.message || 'Something went wrong talking to the server.');
+  }
+}
 
 /* ── dates & derived fields ──────────────────────────────── */
 
@@ -149,17 +179,19 @@ const prioTag   = t => {
 const loadTag   = t => `<span class="load"><span class="load-bar" style="--fill:${WORKLOAD_DAYS[t.workload] * 33}%"></span>${t.workload}</span>`;
 const dueRel    = t => `<div class="due-rel" style="--c:${t.overdue ? OVERDUE : (t.off <= 1 && t.status !== 'Done') ? '#e0904f' : 'color-mix(in srgb,var(--color-text) 45%,transparent)'}">${t.rel}</div>`;
 
-const FILTER_DEFS = [
-  ['Course',   ['All', ...Object.keys(COURSES)]],
-  ['Type',     ['All', ...TYPES]],
-  ['Priority', ['All', 'High', 'Medium', 'Low']],
-  ['Status',   ['All', ...STATUSES]],
-  ['Urgency',  ['All', 'Overdue', 'Critical', 'Urgent', 'Watch', 'Calm']]
-];
+function filterDefs() {
+  return [
+    ['Course',   ['All', ...Object.keys(COURSES)]],
+    ['Type',     ['All', ...TYPES]],
+    ['Priority', ['All', 'High', 'Medium', 'Low']],
+    ['Status',   ['All', ...STATUSES]],
+    ['Urgency',  ['All', 'Overdue', 'Critical', 'Urgent', 'Watch', 'Calm']]
+  ];
+}
 
 function filterBar(trailing) {
   return `<div class="filters">
-    ${FILTER_DEFS.map(([label, opts]) => `<label>${label}
+    ${filterDefs().map(([label, opts]) => `<label>${label}
       <select class="input" data-filter="${label}">
         ${opts.map(o => `<option${o === state.filters[label] ? ' selected' : ''}>${o}</option>`).join('')}
       </select></label>`).join('')}
@@ -460,21 +492,26 @@ function viewArchive() {
 /* ── add / edit dialog ───────────────────────────────────── */
 
 function blankForm() {
-  return { name: '', course: 'CS 251', type: 'Homework', date: toISO(2), time: '23:59',
+  return { name: '', course: Object.keys(COURSES)[0] || '', type: 'Homework', date: toISO(2), time: '23:59',
            priority: 'Medium', workload: 'Moderate', weight: '', status: 'Not Started',
            reminder: '2 days before', recurring: false, notes: '', subtasks: [] };
 }
 
 function renderModal() {
   const root = document.getElementById('modal-root');
-  if (!state.modal) { root.innerHTML = ''; return; }
+  if (state.modal) { root.innerHTML = taskDialogHtml(); return; }
+  if (state.courseModal) { root.innerHTML = courseDialogHtml(); return; }
+  root.innerHTML = '';
+}
+
+function taskDialogHtml() {
   const f = state.form;
   const preview = enrich({ ...f, off: toOffset(f.date), weight: +f.weight || null, subtasks: f.subtasks });
   const sel = (name, opts, value) => `<select class="input" data-form="${name}">${opts.map(o => `<option${o === value ? ' selected' : ''}>${o}</option>`).join('')}</select>`;
   const choices = (name, opts) => `<div class="choice-row">${opts.map(o =>
     `<button type="button" class="choice" data-choice="${name}" data-value="${o}" aria-pressed="${f[name] === o}">${o}</button>`).join('')}</div>`;
 
-  root.innerHTML = `<div class="dialog-backdrop" data-action="close-modal">
+  return `<div class="dialog-backdrop" data-action="close-modal">
     <div class="dialog elev-lg task-dialog" data-stop>
       <div class="dialog-head">
         <span class="dialog-title">${state.editingId ? 'Edit task' : 'New task'}</span>
@@ -521,17 +558,74 @@ function renderModal() {
     </div></div>`;
 }
 
-function saveTask() {
-  const f = state.form;
-  const rec = { course: f.course, name: f.name || 'Untitled task', type: f.type, off: toOffset(f.date),
-                time: f.time, priority: f.priority, workload: f.workload,
-                weight: f.weight === '' ? null : +f.weight, status: f.status, notes: f.notes,
-                subtasks: f.subtasks, recurring: f.recurring, reminder: f.reminder, spent: 0 };
-  state.tasks = state.editingId
-    ? state.tasks.map(t => t.id === state.editingId ? { ...t, ...rec } : t)
-    : state.tasks.concat([{ id: Date.now(), ...rec }]);
-  state.modal = false; state.editingId = null;
-  render();
+function courseDialogHtml() {
+  const f = state.courseForm;
+  return `<div class="dialog-backdrop" data-action="close-course-modal">
+    <div class="dialog elev-lg" data-stop style="width:min(360px,100%)">
+      <span class="dialog-title">Add course</span>
+      <div class="field">
+        <label>Course name</label>
+        <input class="input" id="course-name-input" data-course-form="name" value="${esc(f.name)}" placeholder="e.g. CS 251">
+      </div>
+      <div class="field">
+        <label>Color</label>
+        <div class="swatch-row">
+          ${COURSE_SWATCHES.map(c => `<button type="button" class="swatch" data-swatch="${c}" style="--c:${c}" aria-pressed="${f.color === c}" title="${c}"></button>`).join('')}
+        </div>
+      </div>
+      <div class="dialog-actions">
+        <button class="btn btn-secondary" data-action="close-course-modal">Cancel</button>
+        <button class="btn btn-primary" data-action="save-course">Add course</button>
+      </div>
+    </div></div>`;
+}
+
+async function saveCourse() {
+  await withErrorAlert(async () => {
+    const name = (state.courseForm.name || '').trim();
+    if (!name) { alert('Course name is required.'); return; }
+    await api('POST', '/courses', { name, color: state.courseForm.color });
+    state.courseModal = false; state.courseForm = null;
+    await refreshCourses();
+    render();
+  });
+}
+
+async function saveTask() {
+  await withErrorAlert(async () => {
+    const f = state.form;
+    const payload = {
+      course_id: COURSE_IDS[f.course],
+      name: f.name || 'Untitled task',
+      type: f.type,
+      due_date: f.date,
+      due_time: f.time,
+      priority: f.priority,
+      workload: f.workload,
+      weight: f.weight === '' ? null : +f.weight,
+      status: f.status,
+      notes: f.notes,
+      recurring: f.recurring,
+      reminder: f.reminder
+    };
+
+    if (state.editingId) {
+      await api('PATCH', `/tasks/${state.editingId}`, payload);
+      /* Subtasks have no bulk-update endpoint: toggle/rename existing ones
+       * by id, and create any the user added in this edit session. */
+      for (const s of f.subtasks) {
+        if (s.id) await api('PATCH', `/tasks/${state.editingId}/subtasks/${s.id}`, { done: s.done, text: s.text });
+        else if (s.text.trim()) await api('POST', `/tasks/${state.editingId}/subtasks`, { text: s.text });
+      }
+    } else {
+      payload.subtasks = f.subtasks.map(s => ({ text: s.text, done: s.done }));
+      await api('POST', '/tasks', payload);
+    }
+
+    state.modal = false; state.editingId = null;
+    await refreshTasks();
+    render();
+  });
 }
 
 /* ── quick add (natural language) ────────────────────────── */
@@ -586,12 +680,26 @@ function renderParseBar() {
 function commitQuick() {
   const p = parseQuick(state.quick);
   if (!p) return;
-  state.tasks = state.tasks.concat([task(Date.now(), p.course || 'Personal', p.name || 'Untitled task',
-    'Homework', p.date == null ? 2 : p.date, p.time || '23:59', p.priority || 'Medium',
-    p.workload || 'Moderate', null, 'Not Started')]);
-  state.quick = '';
-  document.getElementById('quick').value = '';
-  render();
+  const courseName = p.course || 'Personal';
+  const courseId = COURSE_IDS[courseName];
+  if (!courseId) { alert(`No course named "${courseName}" yet — add it first.`); return; }
+
+  withErrorAlert(async () => {
+    await api('POST', '/tasks', {
+      course_id: courseId,
+      name: p.name || 'Untitled task',
+      type: 'Homework',
+      due_date: toISO(p.date == null ? 2 : p.date),
+      due_time: p.time || '23:59',
+      priority: p.priority || 'Medium',
+      workload: p.workload || 'Moderate',
+      status: 'Not Started'
+    });
+    state.quick = '';
+    document.getElementById('quick').value = '';
+    await refreshTasks();
+    render();
+  });
 }
 
 /* ── shell render ────────────────────────────────────────── */
@@ -666,13 +774,27 @@ document.addEventListener('click', e => {
       state.filters = { Course: 'All', Type: 'All', Priority: 'All', Status: 'All', Urgency: 'All' };
       return render();
     case 'filter-overdue': state.filters.Urgency = 'Overdue'; return render();
-    case 'toggle-done':
-      state.tasks = state.tasks.map(t => t.id === id ? { ...t, status: t.status === 'Done' ? 'In Progress' : 'Done' } : t);
-      return render();
-    case 'delete': state.tasks = state.tasks.filter(t => t.id !== id); return render();
+    case 'toggle-done': {
+      const t = state.tasks.find(x => x.id === id);
+      if (!t) return;
+      return withErrorAlert(async () => {
+        await api('PATCH', `/tasks/${id}`, { status: t.status === 'Done' ? 'In Progress' : 'Done' });
+        await refreshTasks();
+        render();
+      });
+    }
+    case 'delete':
+      return withErrorAlert(async () => {
+        await api('DELETE', `/tasks/${id}`);
+        await refreshTasks();
+        render();
+      });
     case 'restore':
-      state.tasks = state.tasks.map(t => t.id === id ? { ...t, status: 'In Progress' } : t);
-      return render();
+      return withErrorAlert(async () => {
+        await api('PATCH', `/tasks/${id}`, { status: 'In Progress' });
+        await refreshTasks();
+        render();
+      });
     case 'edit': {
       const t = state.tasks.find(x => x.id === id);
       state.modal = true; state.editingId = id;
@@ -685,8 +807,21 @@ document.addEventListener('click', e => {
     case 'add-task':
       state.modal = true; state.editingId = null; state.form = blankForm();
       return renderModal();
+    case 'add-course':
+      state.courseModal = true;
+      state.courseForm = { name: '', color: COURSE_SWATCHES[Object.keys(COURSES).length % COURSE_SWATCHES.length] };
+      renderModal();
+      return document.getElementById('course-name-input').focus();
+    case 'close-course-modal':
+      if (el.classList.contains('dialog-backdrop') && e.target.closest('[data-stop]')) return;
+      state.courseModal = false; state.courseForm = null; return renderModal();
+    case 'save-course': return saveCourse();
     case 'close-modal':
-      if (el.hasAttribute('data-stop')) return;
+      /* `el` only resolves to the backdrop when the click target has no
+       * data-action of its own (Cancel/✕ resolve to themselves and always
+       * close). A backdrop-resolved click still inside the dialog's
+       * data-stop wrapper is a click on inert dialog content — ignore it. */
+      if (el.classList.contains('dialog-backdrop') && e.target.closest('[data-stop]')) return;
       state.modal = false; return renderModal();
     case 'save-task': return saveTask();
     case 'quick-clear':
@@ -704,9 +839,6 @@ document.addEventListener('click', e => {
   }
 });
 
-/* clicks inside the dialog must not close it */
-document.addEventListener('click', e => { if (e.target.closest('[data-stop]')) e.stopPropagation(); }, true);
-
 document.addEventListener('change', e => {
   const t = e.target;
   if (t.dataset.filter) { state.filters[t.dataset.filter] = t.value; return render(); }
@@ -720,6 +852,7 @@ document.addEventListener('change', e => {
     state.form[t.dataset.form] = t.type === 'checkbox' ? t.checked : t.value;
     if (['date', 'time', 'priority', 'workload'].includes(t.dataset.form)) renderModal();
   }
+  if (t.dataset.courseForm) { state.courseForm[t.dataset.courseForm] = t.value; }
 });
 
 document.addEventListener('input', e => {
@@ -735,7 +868,9 @@ document.addEventListener('keydown', e => {
     state.form.subtasks.push({ text: e.target.value.trim(), done: false });
     renderModal();
   }
+  if (e.target.id === 'course-name-input' && e.key === 'Enter') saveCourse();
   if (e.key === 'Escape' && state.modal) { state.modal = false; renderModal(); }
+  if (e.key === 'Escape' && state.courseModal) { state.courseModal = false; state.courseForm = null; renderModal(); }
 });
 
 /* choice buttons (priority / workload) */
@@ -743,6 +878,14 @@ document.addEventListener('click', e => {
   const b = e.target.closest('[data-choice]');
   if (!b) return;
   state.form[b.dataset.choice] = b.dataset.value;
+  renderModal();
+});
+
+/* course color swatches */
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-swatch]');
+  if (!b) return;
+  state.courseForm.color = b.dataset.swatch;
   renderModal();
 });
 
@@ -766,9 +909,26 @@ document.addEventListener('drop', e => {
   if (!col || state.dragId == null) return;
   e.preventDefault();
   const status = col.dataset.drop, id = state.dragId;
-  state.tasks = state.tasks.map(t => t.id === id ? { ...t, status } : t);
   state.dragId = null; state.dragOver = null;
-  render();
+  withErrorAlert(async () => {
+    await api('PATCH', `/tasks/${id}`, { status });
+    await refreshTasks();
+    render();
+  });
 });
 
-render();
+/* ── boot ────────────────────────────────────────────────── */
+
+async function init() {
+  try {
+    await Promise.all([refreshCourses(), refreshTasks()]);
+  } catch (err) {
+    console.error(err);
+    document.getElementById('view-root').innerHTML =
+      `<div class="empty">Couldn't reach the server. Check the Flask app is running and reload.</div>`;
+    return;
+  }
+  render();
+}
+
+init();

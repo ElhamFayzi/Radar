@@ -110,10 +110,15 @@ def create_task():
     if error:
         return jsonify({"error": error}), 400
 
-    for subtask_text in data.get("subtasks", []):
-        text = str(subtask_text).strip()
+    for subtask_data in data.get("subtasks", []):
+        if isinstance(subtask_data, dict):
+            text = str(subtask_data.get("text", "")).strip()
+            done = bool(subtask_data.get("done", False))
+        else:
+            text = str(subtask_data).strip()
+            done = False
         if text:
-            task.subtasks.append(Subtask(text=text))
+            task.subtasks.append(Subtask(text=text, done=done))
 
     db.session.add(task)
     db.session.commit()

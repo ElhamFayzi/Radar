@@ -45,6 +45,14 @@ body { margin: 0; overflow: hidden; }
   color: var(--c-over); background: color-mix(in srgb, var(--c-over) 16%, transparent); }
 .side-heading { margin-top: var(--space-8); padding: 0 8px 8px; font-size: 10px;
   letter-spacing: .1em; text-transform: uppercase; color: color-mix(in srgb, var(--color-text) 40%, transparent); }
+.side-heading-row { display: flex; align-items: center; justify-content: space-between; }
+.side-heading-add {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 16px; height: 16px; margin: -8px -4px 0 0; padding: 0; border: 0; border-radius: var(--radius-sm);
+  background: transparent; color: color-mix(in srgb, var(--color-text) 40%, transparent);
+  font-size: 12px; line-height: 1; letter-spacing: normal; text-transform: none; cursor: pointer;
+}
+.side-heading-add:hover { background: color-mix(in srgb, var(--color-text) 12%, transparent); }
 .course-item { font-size: 12.5px; padding: 5px 8px; }
 .course-item[aria-pressed="true"] { background: color-mix(in srgb, var(--color-text) 7%, transparent); }
 .course-swatch { width: 8px; height: 8px; border-radius: 2px; flex: none; background: var(--c); }
@@ -260,3 +268,10 @@ body { margin: 0; overflow: hidden; }
   background: color-mix(in srgb, var(--color-text) 2%, transparent); }
 .subtask { display: flex; align-items: center; gap: 9px; font-size: 13px; cursor: pointer; }
 .subtask.done span { color: color-mix(in srgb, var(--color-text) 45%, transparent); text-decoration: line-through; }
+
+/* ── add course dialog ───────────────────────────────────── */
+.swatch-row { display: flex; flex-wrap: wrap; gap: 9px; }
+.swatch { width: 22px; height: 22px; padding: 0; border-radius: 50%; background: var(--c);
+  border: 2px solid transparent; cursor: pointer; }
+.swatch:hover { border-color: color-mix(in srgb, var(--color-text) 30%, transparent); }
+.swatch[aria-pressed="true"] { border-color: var(--color-text); }
