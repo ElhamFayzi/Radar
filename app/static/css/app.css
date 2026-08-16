@@ -56,6 +56,16 @@ body { margin: 0; overflow: hidden; }
 .course-item { font-size: 12.5px; padding: 5px 8px; }
 .course-item[aria-pressed="true"] { background: color-mix(in srgb, var(--color-text) 7%, transparent); }
 .course-swatch { width: 8px; height: 8px; border-radius: 2px; flex: none; background: var(--c); }
+.course-item-row { display: flex; align-items: center; gap: 1px; }
+.course-item-row .course-item { flex: 1; min-width: 0; width: auto; }
+.course-edit-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 20px; height: 20px; flex: none; padding: 0; border: 0; border-radius: var(--radius-sm);
+  background: transparent; color: color-mix(in srgb, var(--color-text) 35%, transparent);
+  font-size: 11px; line-height: 1; cursor: pointer; opacity: 0; transition: opacity .1s ease;
+}
+.course-item-row:hover .course-edit-btn { opacity: 1; }
+.course-edit-btn:hover { background: color-mix(in srgb, var(--color-text) 12%, transparent); color: var(--color-text); }
 .side-foot { margin-top: auto; display: flex; flex-direction: column; gap: 4px; padding-top: var(--space-4); }
 .side-export { justify-content: flex-start; font-size: 12.5px; padding: 6px 8px;
   color: color-mix(in srgb, var(--color-text) 70%, transparent); }
@@ -275,3 +285,10 @@ body { margin: 0; overflow: hidden; }
   border: 2px solid transparent; cursor: pointer; }
 .swatch:hover { border-color: color-mix(in srgb, var(--color-text) 30%, transparent); }
 .swatch[aria-pressed="true"] { border-color: var(--color-text); }
+
+/* ── settings ────────────────────────────────────────────── */
+.settings-section { max-width: 640px; }
+.settings-section + .settings-section { margin-top: var(--space-2); }
+.btn-danger { color: var(--c-over); border-color: var(--c-over); }
+.btn-danger:hover { background: color-mix(in srgb, var(--c-over) 12%, transparent); }
+.btn-danger:active { background: color-mix(in srgb, var(--c-over) 22%, transparent); }

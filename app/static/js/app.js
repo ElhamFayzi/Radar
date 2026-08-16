@@ -34,7 +34,9 @@ const state = {
   quick: '',
   modal: false, editingId: null, form: null, subtaskDraft: '',
   courseModal: false, courseForm: null,
-  dragId: null, dragOver: null
+  deleteCourseModal: false, deleteCourseForm: null,
+  dragId: null, dragOver: null,
+  settings: { default_reminder: '2 days before' }
 };
 
 const COURSE_SWATCHES = [
@@ -90,6 +92,10 @@ async function refreshCourses() {
 async function refreshTasks() {
   const tasks = await api('GET', '/tasks');
   state.tasks = tasks.map(fromApi);
+}
+
+async function refreshSettings() {
+  state.settings = await api('GET', '/settings');
 }
 
 async function withErrorAlert(fn) {
@@ -372,7 +378,7 @@ const LANE_SPAN = 28, LANE_DAY_W = 58;
 
 function viewTimeline() {
   const span = state.tlMode === 'week' ? 7 : LANE_SPAN;
-  const act = active();
+  const act = filtered();
 
   const cols = Array.from({ length: span }, (_, off) => {
     const d = dateFor(off);
@@ -414,11 +420,11 @@ function viewTimeline() {
 /* One lane per course over 4 weeks. A block spans the estimated working
  * window ending on the due date; overlapping blocks pack into sub-rows. */
 function courseLanes() {
-  const act = active().filter(t => t.off < LANE_SPAN);
+  const act = filtered().filter(t => t.off < LANE_SPAN);
   const trackW = LANE_SPAN * LANE_DAY_W;
 
   const ticks = Array.from({ length: LANE_SPAN }, (_, off) =>
-    `<span class="lane-tick${off === 0 ? ' today' : ''}" style="width:${LANE_DAY_W}px">${off % 2 === 0 ? dateFor(off).getDate() : ''}</span>`).join('');
+    `<span class="lane-tick${off === 0 ? ' today' : ''}" style="width:${LANE_DAY_W}px">${dateFor(off).getDate()}</span>`).join('');
 
   const heat = Array.from({ length: LANE_SPAN }, (_, off) => {
     const h = act.filter(t => off === 0 ? t.off <= 0 : t.off === off).reduce((a, t) => a + t.hoursEst, 0);
@@ -489,18 +495,61 @@ function viewArchive() {
   </div>`;
 }
 
+function viewSettings() {
+  const feedUrl = `${location.origin}/export.ics`;
+  const reminderOptions = REMINDERS.filter(r => r !== 'No reminder');
+
+  return `<div class="view-pad">
+    <section class="settings-section">
+      <h5>Calendar export</h5>
+      <p class="muted-sm">A read-only iCal feed of every active task. Due date and time become the event; notes and weight travel in the description.</p>
+      <div style="display:flex;gap:8px;margin-top:10px">
+        <input class="input" id="ics-url" readonly value="${esc(feedUrl)}" style="flex:1;color:color-mix(in srgb,var(--color-text) 70%,transparent)">
+        <button type="button" class="btn btn-secondary" data-action="copy-ics">Copy</button>
+        <a class="btn btn-primary" href="/export.ics" download="coursework.ics">Download .ics</a>
+      </div>
+    </section>
+
+    <hr class="hr">
+
+    <section class="settings-section">
+      <h5>Default reminder lead time</h5>
+      <div class="choice-row" style="max-width:480px;margin-top:10px">
+        ${reminderOptions.map(r => `<button type="button" class="choice" data-action="set-default-reminder"
+          data-value="${r}" aria-pressed="${state.settings.default_reminder === r}">${r}</button>`).join('')}
+      </div>
+    </section>
+
+    <hr class="hr">
+
+    <section class="settings-section">
+      <h5>Urgency weighting</h5>
+      <p class="muted-sm">Urgency is computed, not set. Due proximity carries the most weight, then estimated workload, then your priority and the item's share of the grade — which is why a low-priority paper due tomorrow can outrank a high-priority midterm next week.</p>
+    </section>
+
+    <hr class="hr">
+
+    <section class="settings-section">
+      <h5>Delete a course</h5>
+      <p class="muted-sm">Removing a course also removes every task under it. This can't be undone.</p>
+      <button type="button" class="btn btn-danger" style="margin-top:10px" data-action="open-delete-course">Delete a course</button>
+    </section>
+  </div>`;
+}
+
 /* ── add / edit dialog ───────────────────────────────────── */
 
 function blankForm() {
   return { name: '', course: Object.keys(COURSES)[0] || '', type: 'Homework', date: toISO(2), time: '23:59',
            priority: 'Medium', workload: 'Moderate', weight: '', status: 'Not Started',
-           reminder: '2 days before', recurring: false, notes: '', subtasks: [] };
+           reminder: state.settings.default_reminder, recurring: false, notes: '', subtasks: [] };
 }
 
 function renderModal() {
   const root = document.getElementById('modal-root');
   if (state.modal) { root.innerHTML = taskDialogHtml(); return; }
   if (state.courseModal) { root.innerHTML = courseDialogHtml(); return; }
+  if (state.deleteCourseModal) { root.innerHTML = deleteCourseDialogHtml(); return; }
   root.innerHTML = '';
 }
 
@@ -560,9 +609,10 @@ function taskDialogHtml() {
 
 function courseDialogHtml() {
   const f = state.courseForm;
+  const editing = !!f.id;
   return `<div class="dialog-backdrop" data-action="close-course-modal">
     <div class="dialog elev-lg" data-stop style="width:min(360px,100%)">
-      <span class="dialog-title">Add course</span>
+      <span class="dialog-title">${editing ? 'Edit course' : 'Add course'}</span>
       <div class="field">
         <label>Course name</label>
         <input class="input" id="course-name-input" data-course-form="name" value="${esc(f.name)}" placeholder="e.g. CS 251">
@@ -575,7 +625,7 @@ function courseDialogHtml() {
       </div>
       <div class="dialog-actions">
         <button class="btn btn-secondary" data-action="close-course-modal">Cancel</button>
-        <button class="btn btn-primary" data-action="save-course">Add course</button>
+        <button class="btn btn-primary" data-action="save-course">${editing ? 'Save changes' : 'Add course'}</button>
       </div>
     </div></div>`;
 }
@@ -584,9 +634,59 @@ async function saveCourse() {
   await withErrorAlert(async () => {
     const name = (state.courseForm.name || '').trim();
     if (!name) { alert('Course name is required.'); return; }
-    await api('POST', '/courses', { name, color: state.courseForm.color });
+    const id = state.courseForm.id;
+    if (id) {
+      await api('PATCH', `/courses/${id}`, { name, color: state.courseForm.color });
+    } else {
+      await api('POST', '/courses', { name, color: state.courseForm.color });
+    }
     state.courseModal = false; state.courseForm = null;
     await refreshCourses();
+    render();
+  });
+}
+
+function deleteCourseDialogHtml() {
+  const names = Object.keys(COURSES);
+  const selected = state.deleteCourseForm.name;
+  const taskCount = state.tasks.filter(t => t.course === selected).length;
+
+  if (!names.length) {
+    return `<div class="dialog-backdrop" data-action="close-delete-course-modal">
+      <div class="dialog elev-lg" data-stop style="width:min(360px,100%)">
+        <span class="dialog-title">Delete a course</span>
+        <p class="muted-sm">There are no courses to delete.</p>
+        <div class="dialog-actions">
+          <button class="btn btn-secondary" data-action="close-delete-course-modal">Close</button>
+        </div>
+      </div></div>`;
+  }
+
+  return `<div class="dialog-backdrop" data-action="close-delete-course-modal">
+    <div class="dialog elev-lg" data-stop style="width:min(380px,100%)">
+      <span class="dialog-title">Delete a course</span>
+      <div class="field">
+        <label>Course</label>
+        <select class="input" id="delete-course-select" data-delete-course-form="name">
+          ${names.map(name => `<option${name === selected ? ' selected' : ''}>${esc(name)}</option>`).join('')}
+        </select>
+      </div>
+      <p class="muted-sm">This deletes <strong>${esc(selected)}</strong> and its ${taskCount} task${taskCount === 1 ? '' : 's'}. This can't be undone.</p>
+      <div class="dialog-actions">
+        <button class="btn btn-secondary" data-action="close-delete-course-modal">Cancel</button>
+        <button class="btn btn-danger" data-action="confirm-delete-course">Delete course</button>
+      </div>
+    </div></div>`;
+}
+
+async function confirmDeleteCourse() {
+  await withErrorAlert(async () => {
+    const name = state.deleteCourseForm.name;
+    const courseId = COURSE_IDS[name];
+    if (!courseId) return;
+    await api('DELETE', `/courses/${courseId}`);
+    state.deleteCourseModal = false; state.deleteCourseForm = null;
+    await Promise.all([refreshCourses(), refreshTasks()]);
     render();
   });
 }
@@ -704,13 +804,14 @@ function commitQuick() {
 
 /* ── shell render ────────────────────────────────────────── */
 
-const NAV = [['dashboard', 'Dashboard', '▤'], ['table', 'Table', '≡'], ['kanban', 'Kanban', '▥'], ['timeline', 'Timeline', '⌁']];
+const NAV = [['dashboard', 'Dashboard', '▤'], ['table', 'Table', '≡'], ['kanban', 'Kanban', '▦'], ['timeline', 'Timeline', '◷'], ['settings', 'Settings', '⚙']];
 const TITLES = {
-  dashboard: ['Dashboard', 'Overview — 5 courses, one passport'],
+  dashboard: ['Dashboard', 'Overview'],
   table:     ['Table', 'Every active item, sortable and filterable'],
   kanban:    ['Kanban', 'Status board — drag to move'],
   timeline:  ['Timeline', 'Deadlines against the calendar'],
-  archive:   ['Archive', 'Completed and cleared']
+  archive:   ['Archive', 'Completed and cleared'],
+  settings:  ['Settings', 'Calendar export, defaults, and course management']
 };
 
 function render() {
@@ -723,12 +824,16 @@ function render() {
     </button>`).join('');
 
   document.getElementById('course-legend').innerHTML = Object.keys(COURSES).map(name => `
-    <button type="button" class="nav-item course-item" data-action="filter-course" data-course="${name}"
-      aria-pressed="${state.filters.Course === name}">
-      <span class="course-swatch" style="--c:${COURSES[name]}"></span>
-      <span class="nav-label">${name}</span>
-      <span class="muted-sm">${active().filter(t => t.course === name).length}</span>
-    </button>`).join('');
+    <div class="course-item-row">
+      <button type="button" class="course-edit-btn" data-action="edit-course" data-course="${name}"
+        title="Edit course" aria-label="Edit ${esc(name)}">✎</button>
+      <button type="button" class="nav-item course-item" data-action="filter-course" data-course="${name}"
+        aria-pressed="${state.filters.Course === name}">
+        <span class="course-swatch" style="--c:${COURSES[name]}"></span>
+        <span class="nav-label">${name}</span>
+        <span class="muted-sm">${active().filter(t => t.course === name).length}</span>
+      </button>
+    </div>`).join('');
 
   const archiveBtn = document.getElementById('archive-btn');
   archiveBtn.setAttribute('aria-current', state.view === 'archive');
@@ -742,7 +847,8 @@ function render() {
     state.view === 'dashboard' ? viewDashboard() :
     state.view === 'table'     ? viewTable() :
     state.view === 'kanban'    ? viewKanban() :
-    state.view === 'timeline'  ? viewTimeline() : viewArchive();
+    state.view === 'timeline'  ? viewTimeline() :
+    state.view === 'settings'  ? viewSettings() : viewArchive();
 
   renderParseBar();
   renderModal();
@@ -767,7 +873,10 @@ document.addEventListener('click', e => {
     case 'filter-course': {
       const c = el.dataset.course;
       state.filters.Course = state.filters.Course === c ? 'All' : c;
-      if (state.view === 'dashboard') state.view = 'table';
+      /* Table/Kanban/Timeline already show a filtered task list in place;
+       * any other view (dashboard, settings, archive) has nowhere to show
+       * the filter, so jump to Table. */
+      if (!['table', 'kanban', 'timeline'].includes(state.view)) state.view = 'table';
       return render();
     }
     case 'reset-filters':
@@ -809,13 +918,39 @@ document.addEventListener('click', e => {
       return renderModal();
     case 'add-course':
       state.courseModal = true;
-      state.courseForm = { name: '', color: COURSE_SWATCHES[Object.keys(COURSES).length % COURSE_SWATCHES.length] };
+      state.courseForm = { id: null, name: '', color: COURSE_SWATCHES[Object.keys(COURSES).length % COURSE_SWATCHES.length] };
       renderModal();
       return document.getElementById('course-name-input').focus();
+    case 'edit-course': {
+      const name = el.dataset.course;
+      state.courseModal = true;
+      state.courseForm = { id: COURSE_IDS[name], name, color: COURSES[name] };
+      renderModal();
+      return document.getElementById('course-name-input').focus();
+    }
     case 'close-course-modal':
       if (el.classList.contains('dialog-backdrop') && e.target.closest('[data-stop]')) return;
       state.courseModal = false; state.courseForm = null; return renderModal();
     case 'save-course': return saveCourse();
+    case 'set-default-reminder':
+      return withErrorAlert(async () => {
+        await api('PATCH', '/settings', { default_reminder: el.dataset.value });
+        await refreshSettings();
+        render();
+      });
+    case 'copy-ics':
+      return withErrorAlert(async () => {
+        const url = document.getElementById('ics-url').value;
+        await navigator.clipboard.writeText(url);
+      });
+    case 'open-delete-course':
+      state.deleteCourseModal = true;
+      state.deleteCourseForm = { name: Object.keys(COURSES)[0] || '' };
+      return renderModal();
+    case 'close-delete-course-modal':
+      if (el.classList.contains('dialog-backdrop') && e.target.closest('[data-stop]')) return;
+      state.deleteCourseModal = false; state.deleteCourseForm = null; return renderModal();
+    case 'confirm-delete-course': return confirmDeleteCourse();
     case 'close-modal':
       /* `el` only resolves to the backdrop when the click target has no
        * data-action of its own (Cancel/✕ resolve to themselves and always
@@ -853,6 +988,7 @@ document.addEventListener('change', e => {
     if (['date', 'time', 'priority', 'workload'].includes(t.dataset.form)) renderModal();
   }
   if (t.dataset.courseForm) { state.courseForm[t.dataset.courseForm] = t.value; }
+  if (t.dataset.deleteCourseForm) { state.deleteCourseForm[t.dataset.deleteCourseForm] = t.value; return renderModal(); }
 });
 
 document.addEventListener('input', e => {
@@ -871,6 +1007,7 @@ document.addEventListener('keydown', e => {
   if (e.target.id === 'course-name-input' && e.key === 'Enter') saveCourse();
   if (e.key === 'Escape' && state.modal) { state.modal = false; renderModal(); }
   if (e.key === 'Escape' && state.courseModal) { state.courseModal = false; state.courseForm = null; renderModal(); }
+  if (e.key === 'Escape' && state.deleteCourseModal) { state.deleteCourseModal = false; state.deleteCourseForm = null; renderModal(); }
 });
 
 /* choice buttons (priority / workload) */
@@ -921,7 +1058,7 @@ document.addEventListener('drop', e => {
 
 async function init() {
   try {
-    await Promise.all([refreshCourses(), refreshTasks()]);
+    await Promise.all([refreshCourses(), refreshTasks(), refreshSettings()]);
   } catch (err) {
     console.error(err);
     document.getElementById('view-root').innerHTML =

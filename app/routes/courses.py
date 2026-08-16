@@ -35,7 +35,12 @@ def update_course(course_id):
     data = request.get_json(silent=True) or {}
 
     if "name" in data:
-        course.name = data["name"].strip()
+        name = data["name"].strip()
+        if not name:
+            return jsonify({"error": "name is required"}), 400
+        if Course.query.filter(Course.id != course_id, Course.name == name).first():
+            return jsonify({"error": "a course with that name already exists"}), 409
+        course.name = name
     if "color" in data:
         course.color = data["color"].strip()
 
