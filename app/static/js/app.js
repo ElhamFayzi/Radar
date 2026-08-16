@@ -29,7 +29,7 @@ const state = {
   view: 'dashboard',
   tlMode: 'week',
   tasks: [],
-  filters: { Course: 'All', Type: 'All', Priority: 'All', Status: 'All', Urgency: 'All' },
+  filters: { Course: 'All', Type: 'All', Priority: 'All', Status: 'All', Urgency: 'All', search: '' },
   sortKey: 'due', sortDir: 1,
   quick: '',
   modal: false, editingId: null, form: null, subtaskDraft: '',
@@ -157,17 +157,21 @@ const all      = () => state.tasks.map(enrich);
 const active   = () => all().filter(t => t.status !== 'Done');
 const overdues = () => active().filter(t => t.overdue);
 
-function filtered() {
+function matchesFilters(t) {
   const f = state.filters;
-  return active().filter(t => {
-    if (f.Course   !== 'All' && t.course   !== f.Course)   return false;
-    if (f.Type     !== 'All' && t.type     !== f.Type)     return false;
-    if (f.Priority !== 'All' && t.priority !== f.Priority) return false;
-    if (f.Status   !== 'All' && t.status   !== f.Status)   return false;
-    if (f.Urgency === 'Overdue') return t.overdue;
-    if (f.Urgency !== 'All' && t.band !== f.Urgency)       return false;
-    return true;
-  });
+  const q = (f.search || '').trim().toLowerCase();
+  if (f.Course   !== 'All' && t.course   !== f.Course)   return false;
+  if (f.Type     !== 'All' && t.type     !== f.Type)     return false;
+  if (f.Priority !== 'All' && t.priority !== f.Priority) return false;
+  if (f.Status   !== 'All' && t.status   !== f.Status)   return false;
+  if (f.Urgency === 'Overdue') { if (!t.overdue) return false; }
+  else if (f.Urgency !== 'All' && t.band !== f.Urgency) return false;
+  if (q && !`${t.name} ${t.course} ${t.type} ${t.notes || ''}`.toLowerCase().includes(q)) return false;
+  return true;
+}
+
+function filtered() {
+  return active().filter(matchesFilters);
 }
 
 /* ── small view helpers ──────────────────────────────────── */
@@ -197,6 +201,8 @@ function filterDefs() {
 
 function filterBar(trailing) {
   return `<div class="filters">
+    <input class="input" id="search-input" type="search" placeholder="Search tasks…"
+      value="${esc(state.filters.search || '')}" style="max-width:200px">
     ${filterDefs().map(([label, opts]) => `<label>${label}
       <select class="input" data-filter="${label}">
         ${opts.map(o => `<option${o === state.filters[label] ? ' selected' : ''}>${o}</option>`).join('')}
@@ -227,7 +233,7 @@ function viewDashboard() {
 
   const top = active().slice()
     .sort((a, b) => (b.score + (b.weight || 0) * 0.8) - (a.score + (a.weight || 0) * 0.8))
-    .slice(0, 5);
+    .slice(0, 10);
 
   const bars = [0, 1, 2, 3, 4, 5, 6].map(off => {
     const h = active().filter(t => t.off === off).reduce((a, t) => a + t.hoursEst, 0);
@@ -252,7 +258,7 @@ function viewDashboard() {
     <div class="dash-cols">
       <section class="card elev-sm panel">
         <div style="display:flex;align-items:baseline;gap:8px">
-          <h5>On the radar</h5><span class="muted-sm">urgency × weight, next 5</span>
+          <h5>On the radar</h5><span class="muted-sm">urgency × weight, next 10</span>
         </div>
         <div>${top.map(t => `<div class="urgent-row">
           <span class="urgent-stripe" style="--c:${t.color}"></span>
@@ -340,7 +346,7 @@ function viewKanban() {
   const od = overdues();
   const cols = STATUSES.map(status => {
     const list = status === 'Done'
-      ? all().filter(t => t.status === 'Done').slice(-4)
+      ? all().filter(t => t.status === 'Done' && matchesFilters(t)).slice(-4)
       : filtered().filter(t => t.status === status);
     const dot = status === 'Done' ? '#8fd6b4' : status === 'In Progress' ? '#9184d9' : '#75798c';
     return `<section class="kcol${state.dragOver === status ? ' is-over' : ''}" data-drop="${status}">
@@ -507,6 +513,10 @@ function viewSettings() {
         <input class="input" id="ics-url" readonly value="${esc(feedUrl)}" style="flex:1;color:color-mix(in srgb,var(--color-text) 70%,transparent)">
         <button type="button" class="btn btn-secondary" data-action="copy-ics">Copy</button>
         <a class="btn btn-primary" href="/export.ics" download="coursework.ics">Download .ics</a>
+      </div>
+      <p class="muted-sm" style="margin-top:14px">Or export every task — including completed ones — as a spreadsheet-friendly file.</p>
+      <div style="margin-top:8px">
+        <a class="btn btn-secondary" href="/export.csv" download="coursework.csv">Download .csv</a>
       </div>
     </section>
 
@@ -738,7 +748,7 @@ function parseQuick(q) {
   const cm = rest.match(/\b([A-Za-z]{2,4})\s?(\d{3})\b/);
   if (cm) { const key = `${cm[1].toUpperCase()} ${cm[2]}`; if (COURSES[key]) out.course = key; rest = rest.replace(cm[0], ' '); }
 
-  const wm = rest.match(/\b(heavy|moderate|light)\b/i);
+  const wm = rest.match(/\b(heavy|moderate|light)\s*(workload)?\b/i);
   if (wm) { out.workload = cap(wm[1]); rest = rest.replace(wm[0], ' '); }
 
   const pm = rest.match(/\b(high|medium|low)\s*(priority)?\b/i);
@@ -747,15 +757,26 @@ function parseQuick(q) {
   const tm = rest.match(/\b(\d{1,2})(?::(\d{2}))?\s?(am|pm)\b/i);
   if (tm) { let h = +tm[1] % 12; if (/pm/i.test(tm[3])) h += 12; out.time = `${String(h).padStart(2, '0')}:${tm[2] || '00'}`; rest = rest.replace(tm[0], ' '); }
 
-  const days = ['sunday','monday','tuesday','wednesday','thursday','friday','saturday'];
-  const dm = rest.match(/\b(today|tomorrow|sunday|monday|tuesday|wednesday|thursday|friday|saturday)\b/i);
-  if (dm) {
-    const w = dm[1].toLowerCase();
-    out.date = w === 'today' ? 0 : w === 'tomorrow' ? 1 : ((days.indexOf(w) - today().getDay() + 7) % 7 || 7);
-    rest = rest.replace(dm[0], ' ');
+  const MONTHS = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
+  const mdm = rest.match(/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+(\d{1,2})(?:st|nd|rd|th)?\b/i);
+  if (mdm) {
+    const t0 = today();
+    const month = MONTHS.indexOf(mdm[1].toLowerCase());
+    let target = new Date(t0.getFullYear(), month, +mdm[2]);
+    if (target < t0) target = new Date(t0.getFullYear() + 1, month, +mdm[2]);
+    out.date = Math.round((target - t0) / 86400000);
+    rest = rest.replace(mdm[0], ' ');
+  } else {
+    const days = ['sunday','monday','tuesday','wednesday','thursday','friday','saturday'];
+    const dm = rest.match(/\b(today|tomorrow|sunday|monday|tuesday|wednesday|thursday|friday|saturday)\b/i);
+    if (dm) {
+      const w = dm[1].toLowerCase();
+      out.date = w === 'today' ? 0 : w === 'tomorrow' ? 1 : ((days.indexOf(w) - today().getDay() + 7) % 7 || 7);
+      rest = rest.replace(dm[0], ' ');
+    }
   }
   rest = rest.replace(/\bdue\b/i, ' ').replace(/\s+/g, ' ').trim();
-  out.name = rest ? cap(rest) : null;
+  out.name = rest ? rest.charAt(0).toUpperCase() + rest.slice(1) : null;
   return out;
 }
 const cap = s => s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
@@ -880,7 +901,7 @@ document.addEventListener('click', e => {
       return render();
     }
     case 'reset-filters':
-      state.filters = { Course: 'All', Type: 'All', Priority: 'All', Status: 'All', Urgency: 'All' };
+      state.filters = { Course: 'All', Type: 'All', Priority: 'All', Status: 'All', Urgency: 'All', search: '' };
       return render();
     case 'filter-overdue': state.filters.Urgency = 'Overdue'; return render();
     case 'toggle-done': {
@@ -993,6 +1014,15 @@ document.addEventListener('change', e => {
 
 document.addEventListener('input', e => {
   if (e.target.id === 'quick') { state.quick = e.target.value; renderParseBar(); }
+  if (e.target.id === 'search-input') {
+    state.filters.search = e.target.value;
+    const pos = e.target.selectionStart;
+    requestAnimationFrame(() => {
+      render();
+      const el = document.getElementById('search-input');
+      if (el) { el.focus(); el.setSelectionRange(pos, pos); }
+    });
+  }
 });
 
 document.addEventListener('keydown', e => {

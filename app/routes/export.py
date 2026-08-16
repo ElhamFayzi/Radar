@@ -1,6 +1,9 @@
+import csv
+import io
+
 from flask import Blueprint, Response
 
-from app.models import Task, TaskStatus
+from app.models import Course, Task, TaskStatus
 
 export_bp = Blueprint("export", __name__)
 
@@ -44,4 +47,41 @@ def export_ics():
         body,
         mimetype="text/calendar",
         headers={"Content-Disposition": "attachment; filename=coursework.ics"},
+    )
+
+
+@export_bp.route("/export.csv")
+def export_csv():
+    tasks = Task.query.join(Course).order_by(Course.name, Task.due_date, Task.due_time).all()
+
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow([
+        "Course", "Assignment", "Type", "Due Date", "Due Time", "Priority",
+        "Workload", "Weight (%)", "Status", "Recurring", "Reminder",
+        "Spent Hours", "Notes", "Subtasks",
+    ])
+    for task in tasks:
+        subtasks = "; ".join(f"[{'x' if s.done else ' '}] {s.text}" for s in task.subtasks)
+        writer.writerow([
+            task.course.name,
+            task.name,
+            task.type.value,
+            task.due_date.isoformat(),
+            task.due_time.strftime("%H:%M"),
+            task.priority.value,
+            task.workload.value,
+            task.weight if task.weight is not None else "",
+            task.status.value,
+            "Yes" if task.recurring else "No",
+            task.reminder.value,
+            task.spent_hours,
+            task.notes or "",
+            subtasks,
+        ])
+
+    return Response(
+        buffer.getvalue(),
+        mimetype="text/csv",
+        headers={"Content-Disposition": "attachment; filename=coursework.csv"},
     )

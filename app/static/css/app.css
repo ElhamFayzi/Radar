@@ -80,6 +80,7 @@ body { margin: 0; overflow: hidden; }
 .parse-bar { display: flex; align-items: center; gap: 10px; padding: 9px var(--space-8);
   background: color-mix(in srgb, var(--color-accent) 6%, var(--color-bg));
   border-bottom: 1px solid color-mix(in srgb, var(--color-accent) 35%, transparent); }
+.parse-bar[hidden] { display: none; }
 .parse-kicker { font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--color-accent); }
 .parse-chips { display: flex; gap: 6px; flex-wrap: wrap; flex: 1; }
 .chip { display: inline-flex; gap: 5px; align-items: center; font-size: 11.5px;
@@ -140,6 +141,7 @@ body { margin: 0; overflow: hidden; }
 .filters label { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px;
   color: color-mix(in srgb, var(--color-text) 50%, transparent); }
 .filters select.input { width: auto; min-height: 30px; font-size: 12.5px; padding: 3px 8px; }
+.filters input.input { min-height: 30px; font-size: 12.5px; padding: 3px 8px; }
 
 /* ── table ───────────────────────────────────────────────── */
 .view-pad { padding: var(--space-6) var(--space-8) 40px; }
