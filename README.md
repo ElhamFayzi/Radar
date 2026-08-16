@@ -87,6 +87,20 @@ The icon source (`app/static/icon/icon-source.html`) and packaged
 `set_icon.sh` never needs to regenerate anything, it just re-applies what's
 already there.
 
+### Shortcuts elsewhere (Desktop, Dock, etc.)
+
+A Finder alias to `Radar.command` works from anywhere — aliases resolve back
+to the real file when opened, so the script still finds the project and runs
+correctly. But Finder doesn't copy the custom-icon flag onto a new alias, so
+a plain alias shows a generic icon even though the original has the Radar
+one. Create the shortcut with the icon already applied instead of doing it
+by hand:
+
+```bash
+./scripts/make_shortcut.sh          # creates it on the Desktop
+./scripts/make_shortcut.sh ~/some/other/folder
+```
+
 ## Configuration
 
 All optional, read from environment variables:
