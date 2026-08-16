@@ -1,5 +1,14 @@
 from app.models.course import Course
-from app.models.enrollment import Enrollment, EnrollmentStatus
-from app.models.user import User
+from app.models.subtask import Subtask
+from app.models.task import Priority, ReminderLeadTime, Task, TaskStatus, TaskType, Workload
 
-__all__ = ["User", "Course", "Enrollment", "EnrollmentStatus"]
+__all__ = [
+    "Course",
+    "Task",
+    "Subtask",
+    "TaskType",
+    "Priority",
+    "Workload",
+    "TaskStatus",
+    "ReminderLeadTime",
+]

@@ -1,1 +1,54 @@
-<!-- Home / dashboard template will go here. -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Radar — coursework & deadline tracker</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/nocturne.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--color-accent)" stroke-width="1.6" aria-hidden="true">
+        <circle cx="12" cy="12" r="9.2"></circle><circle cx="12" cy="12" r="5"></circle>
+        <circle cx="12" cy="12" r="1.4" fill="var(--color-accent)"></circle><path d="M12 12 L19 6.4"></path>
+      </svg>
+      <span>Radar</span>
+    </div>
+    <nav id="nav" class="nav-list" aria-label="Views"></nav>
+    <div class="side-heading">Courses</div>
+    <div id="course-legend" class="nav-list"></div>
+    <div class="side-foot">
+      <button type="button" class="nav-item" data-action="view" data-view="archive" id="archive-btn">
+        <span class="nav-icon" aria-hidden="true">▣</span><span class="nav-label">Archive</span><span class="muted-sm" id="archive-count"></span>
+      </button>
+      <button type="button" class="btn btn-secondary side-export">Export to iCal</button>
+    </div>
+  </aside>
+
+  <main class="main">
+    <header class="topbar">
+      <div class="topbar-title">
+        <h4 id="view-title">Dashboard</h4>
+        <div class="muted-sm" id="view-sub"></div>
+      </div>
+      <div class="quick-wrap">
+        <input id="quick" class="input quick-input" autocomplete="off"
+               placeholder="Quick add — “CS 251 project due Friday 11:59pm heavy”">
+      </div>
+      <button type="button" class="btn btn-primary" data-action="add-task">+ Add Task</button>
+    </header>
+
+    <div id="parse-bar" class="parse-bar" hidden></div>
+
+    <div class="scroll" id="view-root"></div>
+  </main>
+</div>
+
+<div id="modal-root"></div>
+
+<script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>

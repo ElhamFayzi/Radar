@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from typing import List, Optional
+from typing import List
 
 from app.extensions import db
 
@@ -8,17 +8,18 @@ class Course(db.Model):
     __tablename__ = "courses"
 
     id: db.Mapped[int] = db.mapped_column(primary_key=True)
-    title: db.Mapped[str] = db.mapped_column(db.String(200), nullable=False)
-    provider: db.Mapped[Optional[str]] = db.mapped_column(db.String(120))
-    url: db.Mapped[Optional[str]] = db.mapped_column(db.String(500))
-    description: db.Mapped[Optional[str]] = db.mapped_column(db.Text)
+    name: db.Mapped[str] = db.mapped_column(db.String(80), unique=True, nullable=False)
+    color: db.Mapped[str] = db.mapped_column(db.String(7), nullable=False, default="#9b9fb5")
     created_at: db.Mapped[datetime] = db.mapped_column(
         default=lambda: datetime.now(timezone.utc)
     )
 
-    enrollments: db.Mapped[List["Enrollment"]] = db.relationship(
+    tasks: db.Mapped[List["Task"]] = db.relationship(
         back_populates="course", cascade="all, delete-orphan"
     )
 
+    def to_dict(self) -> dict:
+        return {"id": self.id, "name": self.name, "color": self.color}
+
     def __repr__(self) -> str:
-        return f"<Course {self.title}>"
+        return f"<Course {self.name}>"
