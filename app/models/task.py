@@ -63,13 +63,14 @@ class Task(db.Model):
     )
     notes: db.Mapped[Optional[str]] = db.mapped_column(db.Text)
     recurring: db.Mapped[bool] = db.mapped_column(default=False, nullable=False)
+    series_id: db.Mapped[Optional[str]] = db.mapped_column(db.String(32), default=None)
     reminder: db.Mapped[ReminderLeadTime] = db.mapped_column(
         db.Enum(ReminderLeadTime), default=ReminderLeadTime.TWO_DAYS_BEFORE, nullable=False
     )
-    spent_hours: db.Mapped[float] = db.mapped_column(default=0, nullable=False)
     created_at: db.Mapped[datetime] = db.mapped_column(
         default=lambda: datetime.now(timezone.utc)
     )
+    completed_at: db.Mapped[Optional[datetime]] = db.mapped_column(default=None)
 
     course: db.Mapped["Course"] = db.relationship(back_populates="tasks")
     subtasks: db.Mapped[List["Subtask"]] = db.relationship(
@@ -91,7 +92,7 @@ class Task(db.Model):
             "notes": self.notes,
             "recurring": self.recurring,
             "reminder": self.reminder.value,
-            "spent_hours": self.spent_hours,
+            "completed_at": self.completed_at.isoformat() if self.completed_at else None,
             "subtasks": [subtask.to_dict() for subtask in self.subtasks],
         }
 

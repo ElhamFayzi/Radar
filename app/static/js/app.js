@@ -29,7 +29,7 @@ const state = {
   view: 'dashboard',
   tlMode: 'week',
   tasks: [],
-  filters: { Course: 'All', Type: 'All', Priority: 'All', Status: 'All', Urgency: 'All', search: '' },
+  filters: { Course: 'All', Type: 'All', Priority: 'All', Status: 'All', Urgency: 'All', search: '', dueSoon: false },
   sortKey: 'due', sortDir: 1,
   quick: '',
   modal: false, editingId: null, form: null, subtaskDraft: '',
@@ -79,7 +79,7 @@ function fromApi(t) {
     subtasks: (t.subtasks || []).map(st => ({ id: st.id, text: st.text, done: st.done })),
     recurring: t.recurring,
     reminder: t.reminder,
-    spent: t.spent_hours
+    completedAt: t.completed_at
   };
 }
 
@@ -166,12 +166,17 @@ function matchesFilters(t) {
   if (f.Status   !== 'All' && t.status   !== f.Status)   return false;
   if (f.Urgency === 'Overdue') { if (!t.overdue) return false; }
   else if (f.Urgency !== 'All' && t.band !== f.Urgency) return false;
+  if (f.dueSoon && !(t.off >= 0 && t.off <= 1)) return false;
   if (q && !`${t.name} ${t.course} ${t.type} ${t.notes || ''}`.toLowerCase().includes(q)) return false;
   return true;
 }
 
 function filtered() {
-  return active().filter(matchesFilters);
+  // Table/Kanban stay uncluttered by finished work by default, but an explicit
+  // Status=Done filter should actually be able to find it rather than always
+  // coming up empty.
+  const base = state.filters.Status === 'Done' ? all() : active();
+  return base.filter(matchesFilters);
 }
 
 /* ── small view helpers ──────────────────────────────────── */
@@ -180,7 +185,12 @@ const esc = str => String(str).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&
 
 const courseTag = t => `<span class="tag-course" style="--c:${t.color}">${esc(t.course)}</span>`;
 const bandTag   = (t, sm) => `<span class="band${sm ? ' sm' : ''}" style="--c:${BAND_COLOR[t.band]}">${BAND_ICON[t.band]} ${t.band}</span>`;
-const statusTag = t => `<span class="status" style="--c:${t.status === 'Done' ? '#8fd6b4' : t.status === 'In Progress' ? '#9184d9' : '#9397ab'}">${t.status}</span>`;
+const statusSelect = t => {
+  const c = t.status === 'Done' ? '#8fd6b4' : t.status === 'In Progress' ? '#9184d9' : '#9397ab';
+  return `<select class="status status-select" data-status-select="${t.id}" style="--c:${c}" title="Change status">
+    ${STATUSES.map(s => `<option value="${s}"${s === t.status ? ' selected' : ''}>${s}</option>`).join('')}
+  </select>`;
+};
 const prioTag   = t => {
   const c = { High: 'var(--color-text)', Medium: 'color-mix(in srgb,var(--color-text) 72%,transparent)', Low: 'color-mix(in srgb,var(--color-text) 45%,transparent)' }[t.priority];
   const b = { High: '.3', Medium: '.16', Low: '.08' }[t.priority];
@@ -207,6 +217,7 @@ function filterBar(trailing) {
       <select class="input" data-filter="${label}">
         ${opts.map(o => `<option${o === state.filters[label] ? ' selected' : ''}>${o}</option>`).join('')}
       </select></label>`).join('')}
+    <button type="button" class="btn btn-secondary" data-action="filter-due-soon" aria-pressed="${state.filters.dueSoon}">Due by tomorrow</button>
     <button type="button" class="btn btn-ghost" data-action="reset-filters">Reset</button>
     <span style="margin-left:auto" class="muted-sm">${trailing}</span>
   </div>`;
@@ -311,8 +322,12 @@ function viewTable() {
     return (x > y ? 1 : x < y ? -1 : 0) * state.sortDir;
   });
 
+  const trailing = state.filters.Status === 'Done'
+    ? `${rows.length} of ${all().filter(t => t.status === 'Done').length} done`
+    : `${rows.length} of ${active().length} active`;
+
   return `<div class="view-pad">
-    ${filterBar(`${rows.length} of ${active().length} active`)}
+    ${filterBar(trailing)}
     <div class="table-scroll"><table class="table">
       <thead><tr>
         <th style="width:4px;padding:0"></th>
@@ -331,7 +346,7 @@ function viewTable() {
         <td>${loadTag(t)}</td>
         <td class="muted-sm">${t.weight ? t.weight + '%' : '—'}</td>
         <td>${bandTag(t)}</td>
-        <td>${statusTag(t)}</td>
+        <td>${statusSelect(t)}</td>
         <td class="row-actions">
           <button class="btn btn-icon" data-action="toggle-done" data-id="${t.id}" title="Mark done">✓</button>
           <button class="btn btn-icon" data-action="edit" data-id="${t.id}" title="Edit">✎</button>
@@ -346,7 +361,9 @@ function viewKanban() {
   const od = overdues();
   const cols = STATUSES.map(status => {
     const list = status === 'Done'
-      ? all().filter(t => t.status === 'Done' && matchesFilters(t)).slice(-4)
+      ? all().filter(t => t.status === 'Done' && matchesFilters(t))
+          .sort((a, b) => new Date(b.completedAt || 0) - new Date(a.completedAt || 0))
+          .slice(0, 4)
       : filtered().filter(t => t.status === status);
     const dot = status === 'Done' ? '#8fd6b4' : status === 'In Progress' ? '#9184d9' : '#75798c';
     return `<section class="kcol${state.dragOver === status ? ' is-over' : ''}" data-drop="${status}">
@@ -370,7 +387,7 @@ function viewKanban() {
   }).join('');
 
   return `<div class="view-pad">
-    ${filterBar('Drag a card between columns to change its status')}
+    ${filterBar('')}
     ${od.length ? `<div class="overdue-banner" style="--c-over:${OVERDUE}">
       <span>▲</span><span>${od.length} ${od.length === 1 ? 'item is' : 'items are'} past due and not marked done — ${od.map(t => esc(t.name)).join(', ')}</span>
       <button class="btn btn-ghost" data-action="filter-overdue" style="margin-left:auto">Show only overdue</button>
@@ -494,7 +511,6 @@ function viewArchive() {
     ${done.map(t => `<div class="archive-row">
       <span style="color:#8fd6b4">✓</span>${courseTag(t)}
       <span class="archive-name">${esc(t.name)}</span>
-      <span class="muted-sm">${t.spent ? t.spent + ' hrs logged' : '—'}</span>
       <span class="muted-sm">${t.dueLabel}</span>
       <button class="btn btn-ghost" data-action="restore" data-id="${t.id}">Restore</button>
     </div>`).join('')}
@@ -829,7 +845,7 @@ const NAV = [['dashboard', 'Dashboard', '▤'], ['table', 'Table', '≡'], ['kan
 const TITLES = {
   dashboard: ['Dashboard', 'Overview'],
   table:     ['Table', 'Every active item, sortable and filterable'],
-  kanban:    ['Kanban', 'Status board — drag to move'],
+  kanban:    ['Kanban', 'Drag a card between columns to change its status'],
   timeline:  ['Timeline', 'Deadlines against the calendar'],
   archive:   ['Archive', 'Completed and cleared'],
   settings:  ['Settings', 'Calendar export, defaults, and course management']
@@ -901,9 +917,10 @@ document.addEventListener('click', e => {
       return render();
     }
     case 'reset-filters':
-      state.filters = { Course: 'All', Type: 'All', Priority: 'All', Status: 'All', Urgency: 'All', search: '' };
+      state.filters = { Course: 'All', Type: 'All', Priority: 'All', Status: 'All', Urgency: 'All', search: '', dueSoon: false };
       return render();
     case 'filter-overdue': state.filters.Urgency = 'Overdue'; return render();
+    case 'filter-due-soon': state.filters.dueSoon = !state.filters.dueSoon; return render();
     case 'toggle-done': {
       const t = state.tasks.find(x => x.id === id);
       if (!t) return;
@@ -999,6 +1016,14 @@ document.addEventListener('change', e => {
   const t = e.target;
   if (t.dataset.filter) { state.filters[t.dataset.filter] = t.value; return render(); }
   if (t.name === 'tlmode') { state.tlMode = t.value; return render(); }
+  if (t.dataset.statusSelect) {
+    const id = +t.dataset.statusSelect;
+    return withErrorAlert(async () => {
+      await api('PATCH', `/tasks/${id}`, { status: t.value });
+      await refreshTasks();
+      render();
+    });
+  }
   if (t.dataset.subtask != null) {
     const i = +t.dataset.subtask;
     state.form.subtasks[i].done = t.checked;

@@ -59,7 +59,7 @@ def export_csv():
     writer.writerow([
         "Course", "Assignment", "Type", "Due Date", "Due Time", "Priority",
         "Workload", "Weight (%)", "Status", "Recurring", "Reminder",
-        "Spent Hours", "Notes", "Subtasks",
+        "Notes", "Subtasks",
     ])
     for task in tasks:
         subtasks = "; ".join(f"[{'x' if s.done else ' '}] {s.text}" for s in task.subtasks)
@@ -75,7 +75,6 @@ def export_csv():
             task.status.value,
             "Yes" if task.recurring else "No",
             task.reminder.value,
-            task.spent_hours,
             task.notes or "",
             subtasks,
         ])

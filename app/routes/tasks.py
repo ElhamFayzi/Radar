@@ -1,4 +1,5 @@
-from datetime import datetime
+import uuid
+from datetime import date, datetime, timedelta, timezone
 
 from flask import Blueprint, jsonify, request
 
@@ -24,6 +25,68 @@ ENUM_FIELDS = (
     ("reminder", ReminderLeadTime),
 )
 
+# Recurring tasks are generated on a fixed weekly schedule, independent of
+# whether earlier occurrences were completed, edited, or deleted, and this
+# is how far ahead the series is kept populated.
+OCCURRENCE_LOOKAHEAD_WEEKS = 8
+
+
+def _create_occurrence(template, due_date):
+    db.session.add(Task(
+        course_id=template.course.id,
+        name=template.name,
+        type=template.type,
+        due_date=due_date,
+        due_time=template.due_time,
+        priority=template.priority,
+        workload=template.workload,
+        weight=template.weight,
+        status=TaskStatus.NOT_STARTED,
+        notes=template.notes,
+        recurring=True,
+        reminder=template.reminder,
+        series_id=template.series_id,
+    ))
+
+
+def _top_up_series(template):
+    """Ensure `template`'s series has a weekly occurrence (on its original weekday) for every
+    week from today through the lookahead horizon. Never backfills already-past weeks — if
+    `template` is stale (its future occurrences were deleted), generation resumes from the
+    next upcoming week instead of flooding in overdue placeholders."""
+    today_ = date.today()
+    horizon = today_ + timedelta(weeks=OCCURRENCE_LOOKAHEAD_WEEKS)
+
+    due = template.due_date + timedelta(weeks=1)
+    while due < today_:
+        due += timedelta(weeks=1)
+
+    created = False
+    while due <= horizon:
+        _create_occurrence(template, due)
+        due += timedelta(weeks=1)
+        created = True
+    return created
+
+
+def _maintain_recurring_series():
+    """Top up every active recurring series so it always reaches the lookahead horizon."""
+    series_ids = [
+        row[0] for row in
+        db.session.query(Task.series_id).filter(Task.series_id.isnot(None)).distinct()
+    ]
+
+    changed = False
+    for series_id in series_ids:
+        latest = Task.query.filter_by(series_id=series_id).order_by(Task.due_date.desc()).first()
+        if latest is None or not latest.recurring:
+            continue
+        if _top_up_series(latest):
+            changed = True
+
+    if changed:
+        db.session.commit()
+
 
 def _apply_task_payload(task, data):
     """Apply a JSON payload's fields onto a Task. Returns an error string, or None on success."""
@@ -42,9 +105,15 @@ def _apply_task_payload(task, data):
     for field, enum_cls in ENUM_FIELDS:
         if field in data:
             try:
-                setattr(task, field, enum_cls(data[field]))
+                value = enum_cls(data[field])
             except ValueError:
                 return f"invalid {field}: {data[field]!r}"
+            if field == "status":
+                if value == TaskStatus.DONE and task.status != TaskStatus.DONE:
+                    task.completed_at = datetime.now(timezone.utc)
+                elif value != TaskStatus.DONE:
+                    task.completed_at = None
+            setattr(task, field, value)
 
     if "due_date" in data:
         try:
@@ -67,14 +136,13 @@ def _apply_task_payload(task, data):
     if "recurring" in data:
         task.recurring = bool(data["recurring"])
 
-    if "spent_hours" in data:
-        task.spent_hours = float(data["spent_hours"])
-
     return None
 
 
 @tasks_bp.route("", methods=["GET"])
 def list_tasks():
+    _maintain_recurring_series()
+
     query = Task.query
 
     course_id = request.args.get("course_id", type=int)
@@ -121,6 +189,11 @@ def create_task():
             task.subtasks.append(Subtask(text=text, done=done))
 
     db.session.add(task)
+
+    if task.recurring:
+        task.series_id = uuid.uuid4().hex
+        _top_up_series(task)
+
     db.session.commit()
     return jsonify(task.to_dict()), 201
 
@@ -129,10 +202,15 @@ def create_task():
 def update_task(task_id):
     task = Task.query.get_or_404(task_id)
     data = request.get_json(silent=True) or {}
+    was_recurring = task.recurring
 
     error = _apply_task_payload(task, data)
     if error:
         return jsonify({"error": error}), 400
+
+    if task.recurring and not was_recurring and not task.series_id:
+        task.series_id = uuid.uuid4().hex
+        _top_up_series(task)
 
     db.session.commit()
     return jsonify(task.to_dict())

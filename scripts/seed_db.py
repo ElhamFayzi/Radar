@@ -15,48 +15,48 @@ COURSES = {
     "Personal": "#9b9fb5",
 }
 
-# (course, name, type, day_offset, time, priority, workload, weight, status, subtasks, notes, recurring, spent_hours)
+# (course, name, type, day_offset, time, priority, workload, weight, status, subtasks, notes, recurring)
 TASKS = [
     ("CS 251", "Problem Set 6 — heaps & tries", "Homework", -1, "23:59", "High", "Moderate", 8, "In Progress",
-     [("Part A: heapify proof", True), ("Part B: trie insert", False)], "Submit on Gradescope", False, 0),
+     [("Part A: heapify proof", True), ("Part B: trie insert", False)], "Submit on Gradescope", False),
     ("HIST 118", "Response paper: Reconstruction", "Paper", 0, "17:00", "Medium", "Moderate", 10, "In Progress",
-     [], "", False, 0),
+     [], "", False),
     ("BIO 221", "Chapter 9 reading + quiz", "Reading", 1, "09:00", "Low", "Light", 2, "Not Started",
-     [], "", True, 0),
+     [], "", True),
     ("MATH 340", "Midterm 1 (Ch. 1-4)", "Exam", 3, "10:30", "High", "Heavy", 25, "In Progress",
-     [("Redo PS 1-3", True), ("Practice exam", False), ("Office hours Weds", False)], "", False, 4.5),
+     [("Redo PS 1-3", True), ("Practice exam", False), ("Office hours Weds", False)], "", False),
     ("CS 251", "Project 2 — B-tree index", "Project", 5, "23:59", "High", "Heavy", 20, "Not Started",
-     [("Design doc", False), ("Split/merge", False)], "Pairs allowed", False, 0),
+     [("Design doc", False), ("Split/merge", False)], "Pairs allowed", False),
     ("PHIL 210", "Weekly discussion post", "Homework", 2, "22:00", "Low", "Light", 3, "Not Started",
-     [], "", True, 0),
+     [], "", True),
     ("Personal", "Renew passport — photo + form", "Other", 6, "12:00", "Medium", "Light", None, "Not Started",
-     [], "", False, 0),
+     [], "", False),
     ("MATH 340", "PS 5 — eigenvectors", "Homework", 4, "23:59", "Medium", "Moderate", 6, "Not Started",
-     [], "", True, 0),
+     [], "", True),
     ("PHIL 210", "Essay 2 draft: Rawls", "Paper", 9, "23:59", "Medium", "Heavy", 15, "Not Started",
-     [], "", False, 0),
+     [], "", False),
     ("BIO 221", "Lab report — gel electrophoresis", "Homework", 7, "20:00", "Medium", "Moderate", 7, "Not Started",
-     [], "", False, 0),
+     [], "", False),
     ("HIST 118", "Primary source annotations", "Reading", 8, "23:59", "Low", "Light", 4, "Not Started",
-     [], "", True, 0),
+     [], "", True),
     ("CS 251", "Quiz 4 — hashing", "Exam", 11, "09:30", "Medium", "Light", 5, "Not Started",
-     [], "", False, 0),
+     [], "", False),
     ("Personal", "TA shift swap request", "Other", 2, "18:00", "Low", "Light", None, "Not Started",
-     [], "", False, 0),
+     [], "", False),
     ("BIO 221", "Exam 2", "Exam", 15, "08:00", "High", "Heavy", 22, "Not Started",
-     [], "", False, 0),
+     [], "", False),
     ("MATH 340", "PS 6 — diagonalization", "Homework", 11, "23:59", "Medium", "Moderate", 6, "Not Started",
-     [], "", True, 0),
+     [], "", True),
     ("HIST 118", "Term paper proposal", "Paper", 13, "23:59", "High", "Moderate", 10, "Not Started",
-     [], "", False, 0),
+     [], "", False),
     ("CS 251", "Problem Set 5 — graphs", "Homework", -6, "23:59", "High", "Moderate", 8, "Done",
-     [], "", False, 6),
+     [], "", False),
     ("PHIL 210", "Essay 1: utilitarian calculus", "Paper", -9, "23:59", "High", "Heavy", 15, "Done",
-     [], "", False, 9.5),
+     [], "", False),
     ("BIO 221", "Chapter 8 reading", "Reading", -3, "09:00", "Low", "Light", 2, "Done",
-     [], "", True, 1),
+     [], "", True),
     ("MATH 340", "PS 4 — determinants", "Homework", -4, "23:59", "Medium", "Moderate", 6, "Done",
-     [], "", False, 3),
+     [], "", False),
 ]
 
 
@@ -76,7 +76,7 @@ def seed():
 
         today = date.today()
         for (course_name, name, task_type, offset, due_time, priority, workload, weight,
-             status, subtasks, notes, recurring, spent_hours) in TASKS:
+             status, subtasks, notes, recurring) in TASKS:
             task = Task(
                 course=courses_by_name[course_name],
                 name=name,
@@ -89,7 +89,6 @@ def seed():
                 status=TaskStatus(status),
                 notes=notes,
                 recurring=recurring,
-                spent_hours=spent_hours,
             )
             for text, done in subtasks:
                 task.subtasks.append(Subtask(text=text, done=done))
