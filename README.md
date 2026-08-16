@@ -13,15 +13,14 @@ Radar/
 ├── app/
 │   ├── __init__.py          # Application factory
 │   ├── extensions.py        # Shared extension instances (db, migrate, etc.)
-│   ├── models/               # SQLAlchemy models (user, course, enrollment)
-│   ├── routes/                # Flask blueprints (main, auth, courses)
-│   ├── templates/             # Jinja templates (layouts, auth, courses)
-│   └── static/                 # CSS, JS, images
+│   ├── models/               # SQLAlchemy models (course, task, subtask, settings)
+│   ├── routes/                # Flask blueprints (main, courses, tasks, settings, export)
+│   ├── templates/             # Jinja templates (single-page app shell)
+│   └── static/                 # CSS, JS
 ├── instance/                   # Local SQLite database (gitignored)
 ├── migrations/                 # Flask-Migrate migration scripts
 ├── tests/                      # Test suite
 ├── scripts/                    # One-off / maintenance scripts
-├── docs/                       # Project documentation
 ├── config.py                   # Flask configuration classes
 ├── run.py                      # Development server entry point
 ├── requirements.txt
@@ -35,3 +34,16 @@ Radar/
 3. Copy `.env.example` to `.env` and fill in values
 4. Initialize the database via Flask-Migrate
 5. `flask run`
+
+## Testing
+
+```
+pip install -r requirements-dev.txt
+playwright install chromium   # one-time, for the E2E tests
+pytest                        # backend route tests + browser E2E tests
+pytest tests --ignore=tests/e2e   # backend only, no browser needed
+```
+
+Every test runs against an isolated temp-file SQLite database created and torn
+down per test (or per test session for the E2E suite) — the real
+`instance/radar.db` is never touched.

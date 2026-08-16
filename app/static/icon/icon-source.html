@@ -1,0 +1,46 @@
+<!doctype html>
+<html><head><style>
+  html,body{margin:0;padding:0;background:transparent;}
+  svg{display:block;}
+</style></head>
+<body>
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <clipPath id="squircle">
+      <rect x="0" y="0" width="1024" height="1024" rx="228" ry="228"/>
+    </clipPath>
+    <radialGradient id="bg" cx="50%" cy="42%" r="75%">
+      <stop offset="0%" stop-color="#232532"/>
+      <stop offset="100%" stop-color="#12141f"/>
+    </radialGradient>
+    <radialGradient id="sweepFade" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#b5abfc" stop-opacity="0.55"/>
+      <stop offset="100%" stop-color="#b5abfc" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <g clip-path="url(#squircle)">
+    <rect x="0" y="0" width="1024" height="1024" fill="url(#bg)"/>
+
+    <!-- sweep wedge -->
+    <path d="M 512 512 L 512 138 A 374 374 0 0 1 830 340 Z" fill="url(#sweepFade)"/>
+
+    <!-- concentric radar rings -->
+    <circle cx="512" cy="512" r="90"  fill="none" stroke="#9184d9" stroke-opacity="0.9" stroke-width="10"/>
+    <circle cx="512" cy="512" r="190" fill="none" stroke="#9184d9" stroke-opacity="0.6" stroke-width="10"/>
+    <circle cx="512" cy="512" r="290" fill="none" stroke="#9184d9" stroke-opacity="0.35" stroke-width="10"/>
+    <circle cx="512" cy="512" r="374" fill="none" stroke="#9184d9" stroke-opacity="0.18" stroke-width="10"/>
+
+    <!-- crosshair -->
+    <line x1="512" y1="240" x2="512" y2="784" stroke="#9184d9" stroke-opacity="0.22" stroke-width="6"/>
+    <line x1="240" y1="512" x2="784" y2="512" stroke="#9184d9" stroke-opacity="0.22" stroke-width="6"/>
+
+    <!-- blip -->
+    <circle cx="676" cy="380" r="30" fill="#b5abfc"/>
+    <circle cx="676" cy="380" r="52" fill="none" stroke="#b5abfc" stroke-opacity="0.5" stroke-width="8"/>
+
+    <!-- center dot -->
+    <circle cx="512" cy="512" r="22" fill="#f5f4ff"/>
+  </g>
+</svg>
+</body></html>
